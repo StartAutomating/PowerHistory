@@ -1,0 +1,381 @@
+﻿<?xml version="1.0" encoding="utf-16"?>
+<!-- Generated with EZOut 1.6: Install-Module EZOut or https://github.com/StartAutomating/EZOut -->
+<Configuration>
+  <ViewDefinitions>
+    <View>
+      <Name>Power.History</Name>
+      <ViewSelectedBy>
+        <TypeName>Power.History</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>left</Alignment>
+            <Width>5</Width>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>RunTime</Label>
+            <Alignment>left</Alignment>
+            <Width>12</Width>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>left</Alignment>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <Wrap />
+            <TableColumnItems>
+              <TableColumnItem>
+                <PropertyName>ID</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock> 
+        try { 
+            $runtimeStr= $_.RunTime.ToString()
+            if ($runtimeStr.Length -gt 12) {
+                $runtimeStr.Substring(0,12) 
+            } else {
+                $runtimeStr
+            }
+        }
+        catch { "00:00:00.000"}
+    </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>CommandLine</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Power.History</Name>
+      <ViewSelectedBy>
+        <TypeName>Power.History</TypeName>
+      </ViewSelectedBy>
+      <CustomControl>
+        <CustomEntries>
+          <CustomEntry>
+            <CustomItem>
+              <ExpressionBinding>
+                <ScriptBlock>$moduleName = 'PowerHistory'
+do {
+    $lm = Get-Module -Name $moduleName -ErrorAction Ignore
+    if ($lm.FormatPartsLoaded) { break }    
+    $wholeScript = @(foreach ($formatFilePath in $lm.exportedFormatFiles) {         
+        foreach ($partNodeName in Select-Xml -LiteralPath $formatFilePath -XPath "/Configuration/Controls/Control/Name[starts-with(., '$')]") {
+            $ParentNode = $partNodeName.Node.ParentNode
+            "$($ParentNode.Name)={
+$($ParentNode.CustomControl.CustomEntries.CustomEntry.CustomItem.ExpressionBinding.ScriptBlock)}"
+        }
+    }) -join [Environment]::NewLine
+    New-Module -Name "${ModuleName}.format.ps1xml" -ScriptBlock ([ScriptBlock]::Create(($wholeScript + ';Export-ModuleMember -Variable *'))) |
+        Import-Module -Global
+    $onRemove = [ScriptBlock]::Create("Remove-Module '${ModuleName}.format.ps1xml'")
+    if (-not $lm.OnRemove) {
+        $lm.OnRemove = $onRemove
+    } else {
+        $lm.OnRemove = [ScriptBlock]::Create($onRemove.ToString() + ''  + [Environment]::NewLine + $lm.OnRemove)
+    }
+    $lm | Add-Member NoteProperty FormatPartsLoaded $true -Force
+} while ($false)
+
+
+    @(
+        $historyEntry = $_
+        $statusLine = '-ID:' + $_.ID + ' # ( ' + $_.ExecutionStatus + ' ['+ $_.RunTime +'] )'
+        if ($_.ExecutionStatus -ne 'Completed') {
+            . $PowerHistory_SetOutputStyle -ForegroundColor '#ff0000'
+        } else {
+            . $PowerHistory_SetOutputStyle -ForegroundColor '#00ff00'
+        }
+
+        . $PowerHistory_heading $statusLine -Level 2
+        . $PowerHistory_clearOutputStyle
+        [Environment]::NewLine 
+        $_.CommandLine
+        [Environment]::NewLine
+        $properties = 
+        @(foreach ($prop in $historyEntry.psobject.properties) {
+            if ('CommandLine', 'EndExecutionTime','ExecutionStatus', 'Id', 'StartExecutionTime', 'RunTime' -notcontains $prop.Name) {
+                $prop  
+            }
+        })
+        if ($properties) {
+            
+        }
+    ) -join ''
+</ScriptBlock>
+              </ExpressionBinding>
+            </CustomItem>
+          </CustomEntry>
+        </CustomEntries>
+      </CustomControl>
+    </View>
+  </ViewDefinitions>
+  <Controls>
+    <Control>
+      <Name>$PowerHistory_SetOutputStyle</Name>
+      <CustomControl>
+        <CustomEntries>
+          <CustomEntry>
+            <CustomItem>
+              <ExpressionBinding>
+                <ScriptBlock>&lt;#
+.Synopsis
+    Adds style to a format output
+.Description
+    Adds style information to a format output, including:
+
+    * ForegroundColor
+    * BackgroundColor
+    * Bold
+    * Underline
+.Notes
+    Stylized Output works in two contexts at present:
+    * Rich consoles (Windows Terminal, PowerShell.exe, Pwsh.exe) (when $host.UI.SupportsVirtualTerminal)
+    * Web pages (Based off the presence of a $Request variable, or when $host.UI.SupportsHTML (you must add this property to $host.UI))
+
+    IsFormatPart: true
+#&gt;
+param(
+[string]$ForegroundColor,
+[string]$BackgroundColor,
+[switch]$Bold,
+[switch]$Underline,
+[switch]$Invert
+)
+
+$canUseANSI = $host.UI.SupportsVirtualTerminal
+$canUseHTML = $Request -or $host.UI.SupportsHTML
+if (-not ($canUseANSI -or $canUseHTML)) { return }
+
+$n =0
+$styleAttributes =
+    @(foreach ($hc in $ForegroundColor,$BackgroundColor) {
+        $n++
+        if (-not $hc) { continue }
+        if ($hc[0] -eq [char]0x1b) {
+            if ($canUseANSI) { 
+                $hc; continue
+            }
+        }
+        if ($hc -and -not $hc.StartsWith('#')) {
+            $placesToLook=
+                @(if ($hc.Contains('.')) {
+                    $module, $setting = $hc -split '\.', 2
+                    $theModule = Get-Module $module
+                    $theModule.PrivateData.Color,
+                        $theModule.PrivateData.Colors,
+                        $theModule.PrivateData.Colour,
+                        $theModule.PrivateData.Colours,
+                        $theModule.PrivateData.EZOut,
+                        $global:PSColors,
+                        $global:PSColours
+                } else {
+                    $setting = $hc
+                    $moduleColorSetting = $theModule.PrivateData.PSColors.$setting
+                })
+
+            foreach ($place in $placesToLook) {
+                if (-not $place) { continue }
+                foreach ($propName in $setting -split '\.') {
+                    $place = $place.$propName
+                    if (-not $place) { break }
+                }
+                if ($place -and "$place".StartsWith('#') -and 4,7 -contains "$place".Length) {
+                    $hc = $place
+                    continue
+                }
+            }
+            if (-not $hc.StartsWith -or -not $hc.StartsWith('#')) {
+                continue
+            }
+        }
+        $r,$g,$b = if ($hc.Length -eq 7) {
+            [int]::Parse($hc[1..2]-join'', 'HexNumber')
+            [int]::Parse($hc[3..4]-join '', 'HexNumber')
+            [int]::Parse($hc[5..6] -join'', 'HexNumber')
+        }elseif ($hc.Length -eq 4) {
+            [int]::Parse($hc[1], 'HexNumber') * 16
+            [int]::Parse($hc[2], 'HexNumber') * 16
+            [int]::Parse($hc[3], 'HexNumber') * 16
+        }
+
+        if ($canUseHTML) {
+            if ($n -eq 1) { "color:$hc" }
+            elseif ($n -eq 2) { "background-color:$hc"} 
+        }
+        elseif ($canUseANSI) {
+            if ($n -eq 1) { [char]0x1b+"[38;2;$r;$g;${b}m" }
+            elseif ($n -eq 2) { [char]0x1b+"[48;2;$r;$g;${b}m" }
+        }
+        
+    })
+
+
+if ($Bold) {
+    $styleAttributes += 
+        if ($canUseHTML) {
+            "font-weight:bold"
+        }
+        elseif ($canUseANSI) 
+        {
+            [char]0x1b + "[1m"
+        }
+}
+
+if ($Underline) {
+    $styleAttributes += 
+        if ($canUseHTML) {
+            "text-decoration:underline"
+        } elseif ($canUseANSI) {
+            [char]0x1b + "[4m"
+        }
+}
+
+if ($Invert) {
+    $styleAttributes += 
+        if ($canUseHTML) {
+            "filter:invert(100%)"
+        } elseif ($canUseANSI) {
+            [char]0x1b + "[7m"            
+        }
+}
+
+if ($canUseHTML) {
+    "&lt;span style='$($styleAttributes -join ';')'&gt;"
+} elseif ($canUseANSI) {
+    $styleAttributes -join ''
+}</ScriptBlock>
+              </ExpressionBinding>
+            </CustomItem>
+          </CustomEntry>
+        </CustomEntries>
+      </CustomControl>
+    </Control>
+    <Control>
+      <Name>$PowerHistory_heading</Name>
+      <CustomControl>
+        <CustomEntries>
+          <CustomEntry>
+            <CustomItem>
+              <ExpressionBinding>
+                <ScriptBlock>&lt;#
+.Synopsis
+    Renders a heading
+.Description
+    Renders a heading.
+
+    If $request or $host.UI.SupportsHTML, this will render heading tags.
+
+    Otherwise, this will render Markdown style headings
+.Notes
+    IsFormatPart: true
+#&gt;
+param(
+# The text inside of the heading
+[string]
+$Text,
+
+# The level of heading
+[ValidateRange(1,6)]
+[int]
+$Level = 2,
+
+# If using SeText style headings (a line followed by a line of equals or a line of dashes)
+# -UnderlineLength will adjust the length of the second line.
+[int]
+$UnderlineLength,
+
+# If set, will render all markdown headings as ATX style, rather than SeText style
+# (ATX style always starts with a comment, SeText styles are underlined)
+[switch]
+$NoSeText
+)
+
+if ($Request -or $Host.UI.SupportsHTML) {
+    "&lt;h$level&gt;$text&lt;/h$level&gt;"
+} else {
+    if ($Level -eq 1 -and -not $NoSeText) {
+        $text + [Environment]::NewLine + ('=' * $(if ($UnderlineLength) { $UnderlineLength } else {$Text.Length})) + [Environment]::NewLine
+    } elseif ($Level -eq 2 -and -not $NoSeText) {
+        $text + [Environment]::NewLine + ('-' * $(if ($UnderlineLength) { $UnderlineLength } else {$Text.Length})) + [Environment]::NewLine
+    } else {
+        [Environment]::NewLine + ('#' * $Level) + ' ' + $Text
+    }
+}</ScriptBlock>
+              </ExpressionBinding>
+            </CustomItem>
+          </CustomEntry>
+        </CustomEntries>
+      </CustomControl>
+    </Control>
+    <Control>
+      <Name>$PowerHistory_clearOutputStyle</Name>
+      <CustomControl>
+        <CustomEntries>
+          <CustomEntry>
+            <CustomItem>
+              <ExpressionBinding>
+                <ScriptBlock>&lt;#
+.Synopsis
+    Clears the output style
+.Description
+    Clears ANSI output style or closes the most recent span element.
+
+    ANSI stylization can be toggled off individually (for instance, to stop applying an -Underline but leave the color unchanged)
+.Notes
+    IsFormatPart: true
+#&gt;
+param(
+# If set, will explicitly clear ANSI Bold
+[switch]
+$Bold,
+# If set, will explicitly clear ANSI Underline
+[switch]
+$Underline,
+# If set, will explicitly clear ANSI Invert
+[switch]
+$Invert,
+# If set, will explicitly clear ANSI Foreground Color
+[switch]
+$ForegroundColor,
+# If set, will explicitly clear ANSI Background Color
+[switch]
+$BackgroundColor
+)
+@(if ($request -or $host.UI.SupportsHTML) {
+    "&lt;/span&gt;"
+} elseif ($Host.UI.SupportsVirtualTerminal) {
+    if ($Underline) {
+        [char]0x1b + "[24m"
+    }
+    if ($Bold) {        
+        [char]0x1b + "[21m"
+    }
+    if ($Invert) {
+        [char]0x1b + '[27m'
+    }
+    if ($ForegroundColor) {
+        [char]0x1b + '[39m'
+    }
+    if ($BackgroundColor) {
+        [char]0x1b + '[49m'
+    }
+
+    if (-not ($Underline -or $Bold -or $Invert -or $ForegroundColor -or $BackgroundColor)) {
+        [char]0x1b + '[0m'
+    }
+    
+}) -join ''</ScriptBlock>
+              </ExpressionBinding>
+            </CustomItem>
+          </CustomEntry>
+        </CustomEntries>
+      </CustomControl>
+    </Control>
+  </Controls>
+</Configuration>
